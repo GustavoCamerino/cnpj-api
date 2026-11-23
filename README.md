@@ -1,4 +1,4 @@
-# API de Cadastro de Empresas por CNPJ
+# API de Cadastro de Empresas por CNPJ - Feita por Gustavo Camerino de Carvalho
 
 API em **PHP 8.4 / Laravel 13** que recebe um CNPJ, busca os dados da empresa na
 [BrasilAPI](https://brasilapi.com.br/docs#tag/CNPJ), grava num banco relacional (MySQL no
