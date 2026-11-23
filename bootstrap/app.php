@@ -31,7 +31,7 @@ return Application::configure(basePath: dirname(__DIR__))
         | formato de ApiResponse::erro():  { "message": ..., "codigo": ... }
         |
         | Os nossos erros "esperados" (ApiException e as filhas dela) já sabem se
-        | renderizar sozinhos. Aqui tratamos o resto: erros do próprio Laravel e
+        | renderizar sozinhos. Aqui é tratado o resto: erros do próprio Laravel e
         | qualquer coisa inesperada.
         |
         | A ordem importa: o Laravel usa o primeiro callback que devolver uma resposta.
@@ -77,7 +77,7 @@ return Application::configure(basePath: dirname(__DIR__))
                 return null;
             }
 
-            // Outros erros HTTP do framework (ex.: 429 do throttle): mantemos o status.
+            // Outros erros HTTP do framework (ex.: 429 do throttle): mantém o status.
             if ($e instanceof HttpExceptionInterface) {
                 return ApiResponse::erro(
                     'Não foi possível processar a requisição.',

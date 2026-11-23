@@ -69,10 +69,10 @@ class EmpresaController extends Controller
      *
      * O updateOrCreate procura pelo CNPJ: se achar, atualiza; se não achar, cria.
      *
-     * Ponto para debate (requisições ao mesmo tempo): se duas requisições com o
+     * Requisições ao mesmo tempo: se duas requisições com o
      * mesmo CNPJ novo chegarem juntas, as duas podem não encontrar o registro e
      * tentar criar. O índice UNIQUE do banco deixa só uma conseguir. A outra
-     * recebe UniqueConstraintViolationException, e nesse caso tentamos de novo.
+     * recebe UniqueConstraintViolationException, e nesse caso o código tenta de novo.
      * Na segunda tentativa o registro já existe, então vira uma atualização.
      * Resultado: nunca há duplicidade e nenhuma das requisições dá erro.
      */

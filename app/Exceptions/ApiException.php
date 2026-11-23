@@ -8,8 +8,8 @@ use Illuminate\Http\JsonResponse;
 use Throwable;
 
 /**
- * Exceção base dos erros "esperados" da API, ou seja, situações que conhecemos e
- * tratamos de propósito (CNPJ não encontrado, serviço externo fora do ar...).
+ * Exceção base dos erros "esperados" da API, ou seja, situações conhecidas e
+ * tratadas de propósito (CNPJ não encontrado, serviço externo fora do ar...).
  *
  * Cada exceção já carrega o status HTTP, um código para programas e uma mensagem
  * para pessoas. O Laravel chama o render() sozinho, então o controller só

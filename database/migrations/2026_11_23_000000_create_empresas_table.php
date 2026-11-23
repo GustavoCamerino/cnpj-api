@@ -58,7 +58,7 @@ return new class extends Migration
 
             // Hora da última consulta à BrasilAPI. É diferente do updated_at: o
             // updated_at só muda quando algum dado muda, e o sincronizado_em muda
-            // em toda consulta. Assim sabemos se o cadastro está atualizado.
+            // em toda consulta. Assim dá para saber se o cadastro está atualizado.
             $table->timestamp('sincronizado_em')->nullable();
 
             $table->timestamps(); // created_at e updated_at

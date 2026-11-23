@@ -3,7 +3,7 @@
 #
 # Base: PHP 8.4 + Apache oficiais. Assim um único container serve a aplicação,
 # sem precisar de um container Nginx separado. Para uma API deste tamanho isso é
-# mais simples de entender e de rodar (ponto para debate: em produção, muitos
+# mais simples de entender e de rodar (em produção, muitos
 # times usam PHP-FPM + Nginx).
 # =============================================================================
 FROM php:8.4-apache
@@ -34,7 +34,7 @@ WORKDIR /var/www/html
 
 # -----------------------------------------------------------------------------
 # 2) Dependências PHP
-#    Copiamos PRIMEIRO só o composer.json/lock e instalamos. O Docker guarda essa
+#    Copia PRIMEIRO só o composer.json/lock e instala. O Docker guarda essa
 #    camada em cache: se só o código mudar (e não as dependências), o rebuild não
 #    baixa tudo de novo. Isso deixa o "docker compose build" bem mais rápido.
 #

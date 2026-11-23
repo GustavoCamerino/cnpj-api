@@ -20,7 +20,7 @@ use Throwable;
  *  | Resposta sem sentido (não é JSON, sem campos) | 502  | RESPOSTA_EXTERNA_INVALIDA       |
  *
  * Por que códigos diferentes e não "500" para tudo?
- *   - 502 Bad Gateway: o serviço do qual dependemos respondeu algo errado.
+ *   - 502 Bad Gateway: o serviço do qual a aplicação depende respondeu algo errado.
  *   - 503 Service Unavailable: o serviço está fora do ar ou sobrecarregado agora. Vale tentar depois.
  *   - 504 Gateway Timeout: o serviço não respondeu a tempo.
  *   Todos dizem a mesma coisa: "o problema não é seu, cliente, nem é bug nosso".

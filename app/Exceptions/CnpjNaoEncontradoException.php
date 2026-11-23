@@ -4,7 +4,7 @@ namespace App\Exceptions;
 
 /**
  * O CNPJ é válido no formato, mas não existe na base da Receita Federal.
- * A BrasilAPI respondeu 404 e nós repassamos 404.
+ * A BrasilAPI respondeu 404 e a API repassa o 404.
  */
 class CnpjNaoEncontradoException extends ApiException
 {

@@ -42,7 +42,7 @@ final class Cnpj
      *
      * Aceita "11.222.333/0001-81" e "11222333000181" (as duas viram a segunda).
      *
-     * Decisão: removemos SÓ os caracteres de máscara e não "tudo que não for
+     * Decisão: remove SÓ os caracteres de máscara e não "tudo que não for
      * número". Se chegar algo como "11#222...", a validação recusa em vez de a
      * gente corrigir a entrada sem avisar ninguém.
      */
@@ -64,7 +64,7 @@ final class Cnpj
         }
 
         // 2) Sequências repetidas (00000000000000, 11111111111111...) passam no
-        //    cálculo dos dígitos, mas não existem de verdade. Recusamos à parte.
+        //    cálculo dos dígitos, mas não existem de verdade. São recusadas à parte.
         if (count(array_unique(str_split($c))) === 1) {
             return false;
         }
