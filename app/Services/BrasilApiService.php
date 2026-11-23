@@ -56,7 +56,7 @@ class BrasilApiService
                 ->timeout($config['timeout'])
                 // Tenta de novo só nas falhas TEMPORÁRIAS (veja deveTentarDeNovo).
                 // throw: false = depois da última tentativa, devolve a resposta para
-                // tratarmos aqui embaixo, em vez de lançar a exceção genérica do Laravel.
+                // ser tratada aqui embaixo, em vez de lançar a exceção genérica do Laravel.
                 ->retry(
                     $config['tentativas'],
                     $config['intervalo_ms'],

@@ -10,8 +10,8 @@ use Illuminate\Http\Resources\Json\JsonResource;
  * Formato do JSON devolvido pela API (requisito: "Retornar os dados processados em JSON").
  *
  * Por que usar um Resource em vez de devolver o Model direto?
- *   -> O JSON de resposta fica separado da estrutura do banco. Se mudarmos uma
- *      coluna, o JSON que os clientes recebem continua o mesmo.
+ *   -> O JSON de resposta fica separado da estrutura do banco. Se uma coluna
+ *      mudar, o JSON que os clientes recebem continua o mesmo.
  *   -> Dá para agrupar os dados: no banco o endereço está em colunas soltas, mas
  *      na resposta ele vem como um objeto `endereco`.
  *   -> As listagens (Tarefa 2) usam exatamente o mesmo formato.
