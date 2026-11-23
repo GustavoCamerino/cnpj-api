@@ -1,0 +1,97 @@
+# =============================================================================
+# Ambiente Docker da API de CNPJ (Tarefa 4)
+#
+# Para subir:   docker compose up -d --build
+# Acesse:       http://localhost:8000/api/empresas
+#
+# Os valores entre ${...:-padrão} podem ser trocados num arquivo .env na raiz do
+# projeto. Se não houver .env, os padrões abaixo são usados, e o ambiente sobe
+# sem nenhuma configuração manual.
+# =============================================================================
+name: cnpj-api
+
+services:
+  # ---------------------------------------------------------------------------
+  # Container da aplicação Laravel (PHP 8.4 + Apache), montado pelo Dockerfile
+  # ---------------------------------------------------------------------------
+  app:
+    build: .
+    image: cnpj-api-app
+    restart: unless-stopped
+    ports:
+      - "${APP_PORT:-8000}:80"        # porta do computador : porta do container
+    environment:
+      APP_NAME: "API CNPJ"
+      APP_ENV: ${APP_ENV:-local}
+      APP_DEBUG: ${APP_DEBUG:-true}
+      APP_KEY: ${APP_KEY:-}            # vazio = o entrypoint gera uma chave
+      APP_URL: http://localhost:${APP_PORT:-8000}
+      LOG_CHANNEL: stderr              # logs do Laravel aparecem em "docker compose logs app"
+
+      # Conexão com o banco. DB_HOST é o NOME DO SERVIÇO abaixo ("db"): dentro da
+      # rede do Docker, os containers se acham pelo nome do serviço.
+      DB_CONNECTION: mysql
+      DB_HOST: db
+      DB_PORT: 3306
+      DB_DATABASE: ${DB_DATABASE:-cnpj}
+      DB_USERNAME: ${DB_USERNAME:-cnpj}
+      DB_PASSWORD: ${DB_PASSWORD:-secret}
+
+      # API externa (Tarefa 1) e resiliência (Tarefa 3)
+      BRASILAPI_URL: ${BRASILAPI_URL:-https://brasilapi.com.br/api}
+      BRASILAPI_CONNECT_TIMEOUT: ${BRASILAPI_CONNECT_TIMEOUT:-5}   # segundos para conectar
+      BRASILAPI_TIMEOUT: ${BRASILAPI_TIMEOUT:-10}                  # segundos para a requisição inteira
+      BRASILAPI_TENTATIVAS: ${BRASILAPI_TENTATIVAS:-2}             # total de tentativas em falha temporária
+      BRASILAPI_INTERVALO_MS: ${BRASILAPI_INTERVALO_MS:-300}       # espera entre as tentativas
+    depends_on:
+      db:
+        # Só inicia a aplicação quando o MySQL estiver aceitando conexões
+        # (veja o healthcheck do serviço db). Sem isso, as migrations falhariam
+        # porque o MySQL demora alguns segundos para subir.
+        condition: service_healthy
+    networks:
+      - cnpj-net
+
+  # ---------------------------------------------------------------------------
+  # Banco de dados relacional (MySQL 8.4 LTS)
+  # ---------------------------------------------------------------------------
+  db:
+    image: mysql:8.4
+    restart: unless-stopped
+    environment:
+      # Na PRIMEIRA inicialização, a imagem do MySQL cria o banco e o usuário abaixo.
+      # Eles usam as mesmas variáveis da aplicação, então os dois lados sempre batem.
+      MYSQL_DATABASE: ${DB_DATABASE:-cnpj}
+      MYSQL_USER: ${DB_USERNAME:-cnpj}
+      MYSQL_PASSWORD: ${DB_PASSWORD:-secret}
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:-root}
+    volumes:
+      # PERSISTÊNCIA: os arquivos do MySQL ficam num volume nomeado, fora do
+      # container. Os dados continuam lá depois de "docker compose down",
+      # de reiniciar o PC ou de rebuildar a imagem. Só "docker compose down -v" apaga.
+      - db-data:/var/lib/mysql
+    ports:
+      # Opcional: expõe o MySQL no computador (porta 3307, para não brigar com um
+      # MySQL local na 3306). Serve para abrir o banco no DBeaver/Workbench.
+      - "${DB_FORWARD_PORT:-3307}:3306"
+    healthcheck:
+      # -h 127.0.0.1 força a conexão por TCP. Durante a inicialização, o MySQL sobe
+      # um servidor temporário sem rede, e com isso evitamos marcar "pronto" cedo demais.
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p$$MYSQL_ROOT_PASSWORD --silent"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+    networks:
+      - cnpj-net
+
+# Comunicação entre os containers: os dois serviços estão na mesma rede bridge
+# privada. O "app" acessa o banco por "db:3306". De fora, só as portas publicadas
+# em "ports" ficam acessíveis.
+networks:
+  cnpj-net:
+    driver: bridge
+
+# Volume nomeado que guarda os dados do MySQL (persistência).
+volumes:
+  db-data:
