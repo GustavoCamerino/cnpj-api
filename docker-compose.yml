@@ -37,9 +37,12 @@ services:
       DB_USERNAME: ${DB_USERNAME:-cnpj}
       DB_PASSWORD: ${DB_PASSWORD:-secret}
 
-      # API externa (Tarefa 1)
+      # API externa (Tarefa 1) e resiliência (Tarefa 3)
       BRASILAPI_URL: ${BRASILAPI_URL:-https://brasilapi.com.br/api}
-      BRASILAPI_TIMEOUT: ${BRASILAPI_TIMEOUT:-15}
+      BRASILAPI_CONNECT_TIMEOUT: ${BRASILAPI_CONNECT_TIMEOUT:-5}   # segundos para conectar
+      BRASILAPI_TIMEOUT: ${BRASILAPI_TIMEOUT:-10}                  # segundos para a requisição inteira
+      BRASILAPI_TENTATIVAS: ${BRASILAPI_TENTATIVAS:-2}             # total de tentativas em falha temporária
+      BRASILAPI_INTERVALO_MS: ${BRASILAPI_INTERVALO_MS:-300}       # espera entre as tentativas
     depends_on:
       db:
         # Só inicia a aplicação quando o MySQL estiver aceitando conexões
