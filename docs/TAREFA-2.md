@@ -7,12 +7,49 @@ Estes endpoints **só leem o banco local**. Eles nunca chamam a BrasilAPI, por i
 rápidos e funcionam mesmo se a API externa estiver fora do ar. Para atualizar os dados de uma
 empresa, use o `POST /api/empresas` da [Tarefa 1](TAREFA-1.md).
 
+```mermaid
+flowchart LR
+    C(["Cliente"])
+    subgraph API["Nossa API"]
+        L["GET /api/empresas<br/>listagem paginada"]
+        S["GET /api/empresas/{cnpj}<br/>uma empresa"]
+        P["POST /api/empresas<br/>(Tarefa 1)"]
+    end
+    DB[("Banco local<br/>empresas")]
+    EXT["BrasilAPI"]
+
+    C --> L & S & P
+    L -->|"SELECT ... ORDER BY razao_social<br/>LIMIT/OFFSET"| DB
+    S -->|"SELECT ... WHERE cnpj = ?"| DB
+    P --> EXT
+    P --> DB
+
+    classDef leitura fill:#def,stroke:#36c,color:#124
+    class L,S leitura
+```
+
+Os endpoints em azul **só leem o banco**. A BrasilAPI só é chamada pelo POST da Tarefa 1.
+
 ## Listagem geral
 
 ```
 GET /api/empresas
 GET /api/empresas?page=2
 GET /api/empresas?per_page=50
+```
+
+```mermaid
+sequenceDiagram
+    actor C as Cliente
+    participant CT as EmpresaController::index
+    participant DB as Banco
+
+    C->>CT: GET /api/empresas?page=2&per_page=50
+    CT->>CT: per_page limitado entre 1 e 100
+    CT->>DB: SELECT COUNT(*) FROM empresas
+    CT->>DB: SELECT * ... ORDER BY razao_social LIMIT 50 OFFSET 50
+    DB-->>CT: até 50 empresas
+    CT-->>C: 200 { data: [...], links: {...}, meta: { total, current_page, last_page... } }
 ```
 
 | Parâmetro | Padrão | Descrição |
@@ -74,11 +111,26 @@ GET /api/empresas/19.131.243.0001-97     ← pontos e hífen são aceitos
 > A barra `/` da máscara **não** pode ir na URL, porque ela separa as partes do caminho.
 > Por isso o CNPJ deve ir sem ela.
 
+```mermaid
+flowchart TD
+    A["GET /api/empresas/{cnpj}"] --> B["Cnpj::limpar()"]
+    B --> C{"CNPJ válido?"}
+    C -- "Não" --> E1(["422 · DADOS_INVALIDOS"])
+    C -- "Sim" --> D{"Existe no banco?"}
+    D -- "Não" --> E2(["404 · EMPRESA_NAO_ENCONTRADA"])
+    D -- "Sim" --> OK(["200 · { data: {...} }"])
+
+    classDef ok fill:#dfd,stroke:#090,color:#060
+    classDef erro fill:#fdd,stroke:#c00,color:#900
+    class OK ok
+    class E1,E2 erro
+```
+
 | Situação | HTTP |
 |---|---|
 | Empresa encontrada | **200**, com `{"data": {...}}` |
-| CNPJ válido, mas não gravado no banco | **404**: `{"message": "Empresa não cadastrada no banco local."}` |
-| CNPJ inválido | **422** |
+| CNPJ válido, mas não gravado no banco | **404**: `{"message": "Empresa não cadastrada no banco local.", "codigo": "EMPRESA_NAO_ENCONTRADA"}` |
+| CNPJ inválido | **422**: `{"message": "O CNPJ informado é inválido.", "codigo": "DADOS_INVALIDOS", "errors": {...}}` |
 
 ## Onde está no código
 

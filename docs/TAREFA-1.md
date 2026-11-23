@@ -14,6 +14,39 @@ Content-Type: application/json
 { "cnpj": "19131243000197" }          ← ou sem máscara
 ```
 
+## Fluxo da requisição
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor C as Cliente
+    participant FR as SincronizarEmpresaRequest
+    participant CT as EmpresaController
+    participant SV as BrasilApiService
+    participant EXT as BrasilAPI
+    participant DB as Banco (empresas)
+
+    C->>FR: POST /api/empresas {"cnpj":"19.131.243/0001-97"}
+    FR->>FR: limpar() → "19131243000197"
+    FR->>FR: valido()? (tamanho, 000..., dígitos verificadores)
+    alt CNPJ inválido
+        FR-->>C: 422 DADOS_INVALIDOS (a BrasilAPI nem é chamada)
+    end
+    FR->>CT: CNPJ limpo e validado
+    CT->>SV: consultarCnpj("19131243000197")
+    SV->>EXT: GET /api/cnpj/v1/19131243000197
+    alt não existe na Receita
+        EXT-->>SV: 404
+        SV-->>C: 404 CNPJ_NAO_ENCONTRADO
+    end
+    EXT-->>SV: 200 + JSON (50+ campos)
+    SV->>SV: estruturar() → nossas colunas
+    SV-->>CT: dados estruturados
+    CT->>DB: updateOrCreate(['cnpj' => ...], dados)
+    DB-->>CT: Empresa (wasRecentlyCreated?)
+    CT-->>C: 201 "criado" ou 200 "atualizado" + EmpresaResource
+```
+
 ## Como cada requisito foi atendido
 
 | Requisito | Onde | Como |
@@ -27,6 +60,22 @@ Content-Type: application/json
 | **Idempotência** | Índice `UNIQUE` em `cnpj` + `updateOrCreate` | Veja a seção abaixo |
 
 ## Regra de idempotência (o ponto principal da tarefa)
+
+```mermaid
+flowchart TD
+    A["CNPJ chega<br/>com ou sem máscara"] --> B["Cnpj::limpar()<br/>sempre 14 caracteres"]
+    B --> C{"updateOrCreate:<br/>já existe esse CNPJ?"}
+    C -- "Não" --> D["INSERT"]
+    C -- "Sim" --> E["UPDATE do mesmo registro"]
+    D --> F{"Outra requisição<br/>inseriu ao mesmo tempo?"}
+    F -- "Não" --> G(["201 · operacao: criado"])
+    F -- "Sim: índice UNIQUE<br/>recusa o INSERT" --> H["captura UniqueConstraintViolation<br/>e tenta updateOrCreate de novo"]
+    H --> E
+    E --> I(["200 · operacao: atualizado"])
+
+    classDef ok fill:#dfd,stroke:#090,color:#060
+    class G,I ok
+```
 
 A garantia tem **duas camadas**:
 
@@ -53,6 +102,40 @@ duplicidade.
 
 Também há o campo `sincronizado_em`, atualizado em **toda** consulta à BrasilAPI. O `atualizado_em`
 (`updated_at`) só muda quando algum dado mudou de fato.
+
+## Tabela `empresas`
+
+```mermaid
+erDiagram
+    EMPRESAS {
+        bigint id PK
+        string cnpj UK "14 caracteres, sem máscara"
+        string razao_social
+        string nome_fantasia
+        string situacao_cadastral
+        date data_situacao_cadastral
+        date data_inicio_atividade
+        string natureza_juridica
+        string porte
+        decimal capital_social "18,2"
+        string telefone
+        string email
+        string logradouro
+        string numero
+        string complemento
+        string bairro
+        string municipio
+        char uf "2"
+        string cep "8"
+        int cnae_principal_codigo
+        string cnae_principal_descricao
+        json atividades_secundarias "lista de {codigo, descricao}"
+        json socios "lista de {nome, qualificacao, data_entrada}"
+        timestamp sincronizado_em "última consulta à BrasilAPI"
+        timestamp created_at
+        timestamp updated_at
+    }
+```
 
 ## Exemplo de resposta (dados reais da BrasilAPI)
 
@@ -105,9 +188,9 @@ Também há o campo `sincronizado_em`, atualizado em **toda** consulta à Brasil
 
 | Situação | HTTP | Exemplo de corpo |
 |---|---|---|
-| CNPJ ausente, mal formatado ou com dígito verificador errado | **422** | `{"message": "O CNPJ informado é inválido.", "errors": {"cnpj": [...]}}` |
-| CNPJ válido, mas que não existe na Receita | **404** | `{"message": "CNPJ não encontrado na base da Receita Federal."}` |
-| BrasilAPI fora do ar, com timeout ou com limite de requisições (429) | **502** | `{"message": "A BrasilAPI respondeu com status 500."}` |
+| CNPJ ausente, mal formatado ou com dígito verificador errado | **422** | `{"message": "O CNPJ informado é inválido.", "codigo": "DADOS_INVALIDOS", "errors": {"cnpj": [...]}}` |
+| CNPJ válido, mas que não existe na Receita | **404** | `{"message": "CNPJ não encontrado na base da Receita Federal.", "codigo": "CNPJ_NAO_ENCONTRADO"}` |
+| BrasilAPI com erro, fora do ar, lenta ou com limite excedido | **502 / 503 / 504** | Veja a tabela completa na [Tarefa 3](TAREFA-3.md#tabela-de-situações) |
 
 No caso de **422**, a API externa **nem chega a ser chamada**, o que economiza tempo e o limite de requisições.
 
@@ -132,8 +215,8 @@ No caso de **422**, a API externa **nem chega a ser chamada**, o que economiza t
    `sincronizado_em` for recente (ex.: menos de 24h), economizando requisições.
 3. **Fallback:** se a BrasilAPI cair, poderíamos tentar outra API (ReceitaWS, CNPJá). O
    `BrasilApiService` já está isolado, o que facilita criar uma interface com mais de uma implementação.
-4. **Retry:** dá para usar `Http::retry()` em falhas temporárias de rede. Não colocamos para não
-   repetir chamadas em caso de 429 (limite de requisições).
+4. **Retry:** implementado na [Tarefa 3](TAREFA-3.md), só para falhas temporárias (rede e 5xx).
+   Não tentamos de novo em 429, para não piorar o excesso de requisições.
 5. **Autenticação e rate limit:** o endpoint está aberto. Em produção, valeria usar Sanctum
    (já instalado) e `throttle` na rota.
 6. **Fila (Queue):** para sincronizar muitos CNPJs de uma vez, o ideal seria colocar as consultas numa fila (job assíncrono).

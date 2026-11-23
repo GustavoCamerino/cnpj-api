@@ -8,7 +8,35 @@ Docker) e oferece endpoints para consultar o que já foi gravado.
 |---|---|---|
 | 1 | Sincronização e persistência cadastral (`POST /api/empresas`) | [docs/TAREFA-1.md](docs/TAREFA-1.md) |
 | 2 | Endpoints internos de consulta (`GET /api/empresas`, `GET /api/empresas/{cnpj}`) | [docs/TAREFA-2.md](docs/TAREFA-2.md) |
+| 3 | Resiliência e tratamento de exceções (timeout, retry, erros padronizados) | [docs/TAREFA-3.md](docs/TAREFA-3.md) |
 | 4 | Ambiente Docker (aplicação + MySQL via `docker compose`) | [docs/TAREFA-4.md](docs/TAREFA-4.md) |
+| 5 | Testes automatizados (PHPUnit + `Http::fake()`) | [docs/TAREFA-5.md](docs/TAREFA-5.md) |
+| 6 | Versionamento com Git (branches, commits, histórico) | [docs/TAREFA-6.md](docs/TAREFA-6.md) |
+
+> Os diagramas deste README e dos documentos em `docs/` são feitos em **Mermaid**. O GitHub
+> desenha os diagramas sozinho. No VS Code, instale a extensão *Markdown Preview Mermaid Support*
+> e abra a pré-visualização com `Ctrl+Shift+V`.
+
+## Visão geral
+
+```mermaid
+flowchart LR
+    C(["Cliente<br/>(Postman, front-end, curl)"])
+
+    subgraph Docker["docker compose"]
+        direction LR
+        APP["app<br/>Laravel 13 · PHP 8.4 · Apache"]
+        DB[("db<br/>MySQL 8.4")]
+        APP <-->|"rede cnpj-net"| DB
+        DB --- V[["volume db-data<br/>(persistência)"]]
+    end
+
+    EXT["BrasilAPI<br/>api/cnpj/v1/{cnpj}"]
+
+    C -->|"POST /api/empresas<br/>(Tarefa 1)"| APP
+    C -->|"GET /api/empresas<br/>(Tarefa 2)"| APP
+    APP -->|"HTTPS · timeout · retry<br/>(Tarefa 3)"| EXT
+```
 
 ---
 
@@ -48,10 +76,11 @@ porta, senha etc., veja a [configuração](#configuração-variáveis-de-ambient
 docker compose exec app php artisan test
 ```
 
-São 21 testes da aplicação (validação de CNPJ, criação, idempotência, erros e listagem),
-mais os 2 exemplos que já vêm com o Laravel. Os testes **não usam a internet** (a BrasilAPI
-é simulada com `Http::fake()`) e **não mexem no MySQL**: eles rodam sempre num SQLite em
-memória (veja o comentário no [phpunit.xml](phpunit.xml)).
+São 49 testes da aplicação (validação de CNPJ, sincronização, persistência, idempotência,
+consulta e resiliência), mais os 2 exemplos que já vêm com o Laravel. Os testes **não usam a
+internet** (a BrasilAPI é simulada com `Http::fake()` e qualquer requisição real é bloqueada)
+e **não mexem no MySQL**: eles rodam sempre num SQLite em memória. Detalhes na
+[Tarefa 5](docs/TAREFA-5.md).
 
 ## Como rodar sem Docker (opcional)
 
@@ -95,25 +124,27 @@ Invoke-RestMethod -Method Post -Uri http://localhost:8000/api/empresas -ContentT
 
 Cada classe cuida de uma coisa só. O caminho de uma requisição é este:
 
-```
-Requisição HTTP
-   │
-   ▼
-routes/api.php ──────────────► define as URLs e qual método do controller atende cada uma
-   │
-   ▼
-SincronizarEmpresaRequest ───► tira a máscara e valida o CNPJ (se for inválido, devolve 422 sem chegar no controller)
-   │        └── usa Rules/CnpjValido ──► usa Support/Cnpj (o cálculo dos dígitos verificadores)
-   ▼
-EmpresaController ───────────► coordena o fluxo, sem regra de integração nem de formato
-   │
-   ├──► Services/BrasilApiService ──► chama a API externa e "traduz" o JSON para as nossas colunas
-   │          └── lança CnpjNaoEncontradoException (404) / ServicoExternoException (502)
-   │
-   ├──► Models/Empresa ─────────────► grava no banco (updateOrCreate = idempotência)
-   │
-   ▼
-Resources/EmpresaResource ───► monta o JSON de resposta (o mesmo formato em todos os endpoints)
+```mermaid
+flowchart TB
+    R["routes/api.php<br/>URLs → métodos do controller"]
+    FR["SincronizarEmpresaRequest<br/>tira a máscara e valida"]
+    RU["Rules/CnpjValido"]
+    CN["Support/Cnpj<br/>dígitos verificadores"]
+    CT["EmpresaController<br/>coordena o fluxo"]
+    SV["Services/BrasilApiService<br/>timeout · retry · valida resposta · estrutura"]
+    EX["Exceptions/<br/>ApiException · ServicoExterno · CnpjNaoEncontrado"]
+    MD["Models/Empresa<br/>updateOrCreate (idempotência)"]
+    RS["Resources/EmpresaResource<br/>JSON de sucesso"]
+    AR["Support/ApiResponse + bootstrap/app.php<br/>JSON de erro padronizado"]
+
+    R --> FR
+    FR --> RU --> CN
+    FR -- "inválido" --> AR
+    FR -- "válido" --> CT
+    CT --> SV
+    SV -- "falha" --> EX --> AR
+    CT --> MD
+    CT --> RS
 ```
 
 | Arquivo | Responsabilidade |
