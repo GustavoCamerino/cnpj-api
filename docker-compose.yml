@@ -76,7 +76,7 @@ services:
       - "${DB_FORWARD_PORT:-3307}:3306"
     healthcheck:
       # -h 127.0.0.1 força a conexão por TCP. Durante a inicialização, o MySQL sobe
-      # um servidor temporário sem rede, e com isso evitamos marcar "pronto" cedo demais.
+      # um servidor temporário sem rede, e assim não marca "pronto" cedo demais.
       test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p$$MYSQL_ROOT_PASSWORD --silent"]
       interval: 5s
       timeout: 5s

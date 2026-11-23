@@ -1,6 +1,6 @@
 # API de Cadastro de Empresas por CNPJ - Feita por Gustavo Camerino de Carvalho
 
-API em **PHP 8.4 / Laravel 13** que recebe um CNPJ, busca os dados da empresa na
+API em PHP 8.4 / Laravel 13 que recebe um CNPJ, busca os dados da empresa na
 [BrasilAPI](https://brasilapi.com.br/docs#tag/CNPJ), grava num banco relacional (MySQL no
 Docker) e oferece endpoints para consultar o que já foi gravado.
 
@@ -13,7 +13,7 @@ Docker) e oferece endpoints para consultar o que já foi gravado.
 | 5 | Testes automatizados (PHPUnit + `Http::fake()`) | [docs/TAREFA-5.md](docs/TAREFA-5.md) |
 | 6 | Versionamento com Git (branches, commits, histórico) | [docs/TAREFA-6.md](docs/TAREFA-6.md) |
 
-> Os diagramas deste README e dos documentos em `docs/` são feitos em **Mermaid**. O GitHub
+> Os diagramas deste README e dos documentos em `docs/` são feitos em Mermaid. O GitHub
 > desenha os diagramas sozinho. No VS Code, instale a extensão *Markdown Preview Mermaid Support*
 > e abra a pré-visualização com `Ctrl+Shift+V`.
 
@@ -42,8 +42,8 @@ flowchart LR
 
 ## Como rodar (Docker, recomendado)
 
-**Pré-requisito:** só o [Docker](https://www.docker.com/products/docker-desktop/), com o
-Docker Compose, que já vem no Docker Desktop. **Não** é preciso instalar PHP, Composer nem MySQL.
+Pré-requisito: só o [Docker](https://www.docker.com/products/docker-desktop/), com o
+Docker Compose, que já vem no Docker Desktop. Não é preciso instalar PHP, Composer nem MySQL.
 
 ```bash
 # 1. Na pasta do projeto, monte as imagens e suba os containers
@@ -53,7 +53,7 @@ docker compose up -d --build
 #    As tabelas são criadas automaticamente, porque as migrations rodam na inicialização.
 ```
 
-A API fica disponível em **http://localhost:8000/api/empresas**.
+A API fica disponível em http://localhost:8000/api/empresas.
 
 Não é preciso criar `.env`: todos os valores têm padrão no `docker-compose.yml`. Para mudar
 porta, senha etc., veja a [configuração](#configuração-variáveis-de-ambiente).
@@ -64,10 +64,10 @@ porta, senha etc., veja a [configuração](#configuração-variáveis-de-ambient
 |---|---|
 | `docker compose ps` | Ver se os containers estão rodando (o `db` deve aparecer como `healthy`) |
 | `docker compose logs -f app` | Acompanhar os logs da aplicação (Apache e Laravel) |
-| `docker compose exec app php artisan test` | Rodar os testes automatizados **dentro** do container |
+| `docker compose exec app php artisan test` | Rodar os testes automatizados dentro do container |
 | `docker compose exec db mysql -ucnpj -psecret cnpj` | Abrir o console do MySQL |
-| `docker compose down` | Parar e remover os containers (**os dados do banco continuam guardados**) |
-| `docker compose down -v` | Parar e **apagar** também os dados do banco |
+| `docker compose down` | Parar e remover os containers (os dados do banco continuam guardados) |
+| `docker compose down -v` | Parar e apagar também os dados do banco |
 | `docker compose up -d --build` | Subir de novo depois de mudar o código |
 
 ### Testes automatizados
@@ -77,9 +77,9 @@ docker compose exec app php artisan test
 ```
 
 São 49 testes da aplicação (validação de CNPJ, sincronização, persistência, idempotência,
-consulta e resiliência), mais os 2 exemplos que já vêm com o Laravel. Os testes **não usam a
-internet** (a BrasilAPI é simulada com `Http::fake()` e qualquer requisição real é bloqueada)
-e **não mexem no MySQL**: eles rodam sempre num SQLite em memória. Detalhes na
+consulta e resiliência), mais os 2 exemplos que já vêm com o Laravel. Os testes não usam a
+internet (a BrasilAPI é simulada com `Http::fake()` e qualquer requisição real é bloqueada)
+e não mexem no MySQL: eles rodam sempre num SQLite em memória. Detalhes na
 [Tarefa 5](docs/TAREFA-5.md).
 
 ## Como rodar sem Docker (opcional)
@@ -126,7 +126,7 @@ Cada classe cuida de uma coisa só. O caminho de uma requisição é este:
 
 ```mermaid
 flowchart TB
-    R["routes/api.php<br/>URLs → métodos do controller"]
+    R["routes/api.php<br/>URLs -> métodos do controller"]
     FR["SincronizarEmpresaRequest<br/>tira a máscara e valida"]
     RU["Rules/CnpjValido"]
     CN["Support/Cnpj<br/>dígitos verificadores"]
@@ -164,7 +164,7 @@ flowchart TB
 | [docker-compose.yml](docker-compose.yml) | Containers da aplicação e do MySQL, rede, volume e variáveis |
 | [docker/](docker/) | Script de inicialização (`entrypoint.sh`) e configuração do Apache |
 
-Todos os arquivos acima têm comentários explicando o **porquê** de cada decisão.
+Todos os arquivos acima têm comentários explicando o porquê de cada decisão.
 
 ---
 
@@ -188,6 +188,6 @@ O Docker Compose lê esse arquivo sozinho. Sem ele, valem os padrões.
 | `BRASILAPI_TENTATIVAS` | `2` | Total de tentativas em falhas temporárias (1 = não tenta de novo) |
 | `BRASILAPI_INTERVALO_MS` | `300` | Espera entre as tentativas, em milissegundos |
 
-> As senhas padrão servem **só para desenvolvimento e avaliação**. Em produção, elas devem vir de um `.env` que não vai para o Git, ou de um gerenciador de segredos.
+> As senhas padrão servem só para desenvolvimento e avaliação. Em produção, elas devem vir de um `.env` que não vai para o Git, ou de um gerenciador de segredos.
 
 Sem Docker, a configuração fica no `.env` normal do Laravel (`DB_CONNECTION=sqlite` por padrão).
