@@ -34,6 +34,55 @@ Exemplo de validação:
 
 O formato é montado num único lugar: [app/Support/ApiResponse.php](../app/Support/ApiResponse.php).
 
+## Como cada resposta da BrasilAPI é tratada
+
+```mermaid
+flowchart TD
+    REQ["GET BrasilAPI<br/>connectTimeout 5s · timeout 10s"] --> Q{"Houve resposta?"}
+
+    Q -- "Não: passou do tempo" --> RT1{"Ainda há<br/>tentativas?"}
+    Q -- "Não: sem conexão" --> RT1
+    RT1 -- "Sim (espera 300 ms)" --> REQ
+    RT1 -- "Não, era timeout" --> E504(["504 · SERVICO_EXTERNO_TIMEOUT"])
+    RT1 -- "Não, era conexão" --> E503a(["503 · SERVICO_EXTERNO_INDISPONIVEL"])
+
+    Q -- "Sim" --> ST{"Status HTTP"}
+    ST -- "404" --> E404(["404 · CNPJ_NAO_ENCONTRADO"])
+    ST -- "400" --> E422(["422 · CNPJ_RECUSADO_SERVICO_EXTERNO"])
+    ST -- "429" --> E503b(["503 · SERVICO_EXTERNO_LIMITE_EXCEDIDO<br/>+ Retry-After"])
+    ST -- "5xx" --> RT2{"Ainda há<br/>tentativas?"}
+    RT2 -- "Sim" --> REQ
+    RT2 -- "Não" --> E502a(["502 · SERVICO_EXTERNO_ERRO"])
+    ST -- "outro" --> E502a
+    ST -- "200" --> V{"Objeto JSON?<br/>cnpj igual ao consultado?<br/>razao_social presente?"}
+    V -- "Não" --> E502b(["502 · RESPOSTA_EXTERNA_INVALIDA"])
+    V -- "Sim" --> OK(["estruturar() defensivo<br/>→ grava → 201/200"])
+
+    classDef ok fill:#dfd,stroke:#090,color:#060
+    classDef cliente fill:#ffd,stroke:#b90,color:#640
+    classDef externo fill:#fdd,stroke:#c00,color:#900
+    class OK ok
+    class E404,E422 cliente
+    class E504,E503a,E503b,E502a,E502b externo
+```
+
+Amarelo = problema no pedido (4xx). Vermelho = problema no serviço externo (5xx). Verde = sucesso.
+
+### Nova tentativa automática em falha temporária
+
+```mermaid
+sequenceDiagram
+    participant SV as BrasilApiService
+    participant EXT as BrasilAPI
+
+    SV->>EXT: tentativa 1: GET /cnpj/v1/{cnpj}
+    EXT-->>SV: 503 Service Unavailable (instabilidade)
+    Note over SV: deveTentarDeNovo()? 5xx → sim<br/>espera 300 ms
+    SV->>EXT: tentativa 2: GET /cnpj/v1/{cnpj}
+    EXT-->>SV: 200 OK + JSON
+    Note over SV: o cliente nem percebe a falha
+```
+
 ## Tabela de situações
 
 | Situação | HTTP | `codigo` | Tenta de novo? |
@@ -108,6 +157,20 @@ Veja a tabela acima. Cada situação tem um método próprio em
 possibilidades ficam visíveis num lugar só.
 
 ### 5. Nenhuma exceção não tratada chega ao consumidor
+
+```mermaid
+flowchart LR
+    X["Exceção lançada<br/>em qualquer lugar"] --> A{"É ApiException?"}
+    A -- "Sim" --> R1["render() próprio<br/>status + codigo + message"]
+    A -- "Não" --> B{"Tipo"}
+    B -- "ValidationException" --> R2["422 DADOS_INVALIDOS + errors"]
+    B -- "NotFoundHttp" --> R3["404 ROTA_NAO_ENCONTRADA"]
+    B -- "MethodNotAllowed" --> R4["405 METODO_NAO_PERMITIDO"]
+    B -- "outro HttpException" --> R5["mesmo status · ERRO_HTTP_xxx"]
+    B -- "qualquer outra<br/>(bug, banco fora...)" --> R6["500 ERRO_INTERNO<br/>mensagem genérica"]
+    R1 & R2 & R3 & R4 & R5 & R6 --> J(["JSON padrão<br/>{ message, codigo }"])
+    R6 -. "detalhe técnico" .-> LOG[("log")]
+```
 
 Em [bootstrap/app.php](../bootstrap/app.php) há um tratamento central para `/api/*`:
 

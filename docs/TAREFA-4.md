@@ -14,23 +14,30 @@ Depois é só acessar http://localhost:8000/api/empresas. As instruções comple
 
 ## Visão geral
 
-```
-                    Seu computador
- ┌───────────────────────────────────────────────────────────┐
- │                                                           │
- │   localhost:8000                     localhost:3307       │
- │        │                             (opcional: DBeaver)  │
- │        ▼                                    │             │
- │  ┌────────────────────┐   rede "cnpj-net"   ▼             │
- │  │  app               │   ─────────────►  ┌────────────┐  │
- │  │  PHP 8.4 + Apache  │   db:3306         │  db        │  │
- │  │  Laravel 13        │                   │  MySQL 8.4 │  │
- │  └─────────┬──────────┘                   └─────┬──────┘  │
- │            │                                    │         │
- │            │ HTTPS                       volume "db-data" │
- │            ▼                             (dados mantidos) │
- │      BrasilAPI (internet)                                 │
- └───────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TB
+    subgraph PC["Seu computador"]
+        B(["Navegador / Postman / curl"])
+        DBV(["DBeaver / Workbench<br/>(opcional)"])
+
+        subgraph COMPOSE["docker compose · projeto cnpj-api"]
+            subgraph NET["rede bridge: cnpj-net"]
+                APP["app<br/>PHP 8.4 + Apache<br/>Laravel 13<br/>porta 80"]
+                DB[("db<br/>MySQL 8.4<br/>porta 3306")]
+            end
+            VOL[["volume db-data<br/>/var/lib/mysql"]]
+        end
+    end
+    EXT["BrasilAPI (internet)"]
+
+    B -->|"localhost:8000 → 80"| APP
+    DBV -->|"localhost:3307 → 3306"| DB
+    APP -->|"DB_HOST=db:3306"| DB
+    DB --- VOL
+    APP -->|"HTTPS"| EXT
+
+    classDef vol fill:#ffd,stroke:#b90,color:#640
+    class VOL vol
 ```
 
 ## Como cada requisito foi atendido
@@ -47,6 +54,30 @@ Depois é só acessar http://localhost:8000/api/empresas. As instruções comple
 | Subir com `docker compose`, seguindo o README | [README.md](../README.md) | `docker compose up -d --build` |
 
 ## O que acontece no `docker compose up`
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor U as Você
+    participant DC as docker compose
+    participant DB as db (MySQL)
+    participant APP as app (entrypoint.sh)
+
+    U->>DC: docker compose up -d --build
+    DC->>DC: build da imagem app (Dockerfile)
+    DC->>DB: inicia
+    Note over DB: 1ª vez: cria o banco "cnpj" e o usuário "cnpj"<br/>no volume db-data
+    loop healthcheck a cada 5s
+        DC->>DB: mysqladmin ping -h 127.0.0.1
+    end
+    DB-->>DC: healthy
+    DC->>APP: inicia (depends_on: service_healthy)
+    APP->>APP: APP_KEY vazia? gera uma temporária
+    APP->>DB: php artisan migrate --force (tenta de novo se falhar)
+    APP->>APP: chown storage/ para www-data
+    APP->>APP: exec apache2-foreground
+    U->>APP: http://localhost:8000/api/empresas
+```
 
 1. **Build:** o Docker monta a imagem `app` a partir do `Dockerfile`, instalando as dependências PHP com o Composer.
 2. **`db` sobe primeiro.** Na primeira vez, o MySQL cria o banco `cnpj` e o usuário `cnpj`.
@@ -79,6 +110,25 @@ Depois é só acessar http://localhost:8000/api/empresas. As instruções comple
 
 Ao rodar `php artisan test` **dentro do container**, os testes **apagaram o banco MySQL real**.
 
+```mermaid
+flowchart LR
+    subgraph ANTES["Antes da correção"]
+        A1["php artisan test<br/>dentro do container"] --> A2{"DB_CONNECTION?"}
+        A2 -->|"$_SERVER (Docker): mysql<br/>vence o phpunit.xml"| A3[("MySQL REAL")]
+        A3 --> A4["RefreshDatabase<br/>apaga as tabelas"]
+    end
+    subgraph DEPOIS["Depois da correção"]
+        B1["php artisan test<br/>dentro do container"] --> B2{"DB_CONNECTION?"}
+        B2 -->|"&lt;server force=true&gt;: sqlite"| B3[("SQLite :memory:")]
+        B3 --> B4["MySQL real intacto"]
+    end
+
+    classDef ruim fill:#fdd,stroke:#c00,color:#900
+    classDef bom fill:#dfd,stroke:#090,color:#060
+    class A3,A4 ruim
+    class B3,B4 bom
+```
+
 **Por quê:** os testes usam `RefreshDatabase`, que recria as tabelas. O `phpunit.xml` mandava
 usar SQLite em memória, mas **só se a variável ainda não existisse**. No container, o Docker já
 definia `DB_CONNECTION=mysql`. E o Laravel lê primeiro o `$_SERVER`, onde ficam as variáveis do
@@ -86,7 +136,7 @@ Docker. Por isso nem o `<env force="true">` resolveu sozinho.
 
 **Correção:** no [phpunit.xml](../phpunit.xml), as variáveis críticas passaram a ser definidas com
 `<server name="DB_CONNECTION" value="sqlite" force="true"/>`. Validamos assim: com 1 registro no
-MySQL, rodamos os 23 testes e o registro continuou lá.
+MySQL, rodamos a suíte de testes e o registro continuou lá.
 
 **Lição:** testes que limpam o banco precisam ser isolados de forma **explícita** do banco real.
 Não dá para confiar em "padrões".
@@ -99,7 +149,7 @@ Não dá para confiar em "padrões".
 | `POST /api/empresas` com máscara (BrasilAPI real) | 201, gravado no MySQL |
 | Reenvio do mesmo CNPJ | 200 `atualizado`, continua com 1 registro |
 | `docker compose down` + `up --build` | Registro **continuou lá** (persistência OK) |
-| `docker compose exec app php artisan test` | 23 testes passando, MySQL intacto |
+| `docker compose exec app php artisan test` | Todos os testes passando, MySQL intacto |
 
 ## Pontos para debate com a equipe
 
