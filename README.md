@@ -152,7 +152,10 @@ O Docker Compose lê esse arquivo sozinho. Sem ele, valem os padrões.
 | `DB_ROOT_PASSWORD` | `root` | Senha do root do MySQL |
 | `DB_FORWARD_PORT` | `3307` | Porta para acessar o MySQL de fora (DBeaver, Workbench) |
 | `BRASILAPI_URL` | `https://brasilapi.com.br/api` | URL base da API externa |
-| `BRASILAPI_TIMEOUT` | `15` | Tempo máximo de espera da API externa, em segundos |
+| `BRASILAPI_CONNECT_TIMEOUT` | `5` | Tempo máximo para conectar na API externa, em segundos |
+| `BRASILAPI_TIMEOUT` | `10` | Tempo máximo da requisição à API externa, em segundos |
+| `BRASILAPI_TENTATIVAS` | `2` | Total de tentativas em falhas temporárias (1 = não tenta de novo) |
+| `BRASILAPI_INTERVALO_MS` | `300` | Espera entre as tentativas, em milissegundos |
 
 > As senhas padrão servem **só para desenvolvimento e avaliação**. Em produção, elas devem vir de um `.env` que não vai para o Git, ou de um gerenciador de segredos.
 

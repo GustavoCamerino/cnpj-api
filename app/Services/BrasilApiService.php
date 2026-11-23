@@ -4,8 +4,12 @@ namespace App\Services;
 
 use App\Exceptions\CnpjNaoEncontradoException;
 use App\Exceptions\ServicoExternoException;
+use App\Support\Cnpj;
 use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Http\Client\RequestException;
+use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
+use Throwable;
 
 /**
  * Integração com a API pública BrasilAPI.
@@ -13,7 +17,7 @@ use Illuminate\Support\Facades\Http;
  *
  * Obs.: no enunciado a URL veio sem a barra antes do CNPJ ("/api/cnpj/v1{cnpj}").
  * A URL correta é:  GET https://brasilapi.com.br/api/cnpj/v1/{cnpj}
- * A URL base e o timeout ficam em config/services.php (chave "brasilapi").
+ * URL, timeouts e tentativas ficam em config/services.php (chave "brasilapi").
  *
  * Por que separar isso num Service?
  *   -> Toda a parte que "conhece" a BrasilAPI (URL, nomes dos campos, códigos de
@@ -22,38 +26,125 @@ use Illuminate\Support\Facades\Http;
  *      continuam iguais.
  *   -> Nos testes, o Http::fake() substitui a chamada real e os testes não
  *      dependem da internet nem do limite de requisições da BrasilAPI.
+ *
+ * RESILIÊNCIA (Tarefa 3): não confiamos em nada que vem de fora. Por isso
+ *   - há tempo limite para conectar e para responder (timeout);
+ *   - falhas temporárias (rede, erro 5xx) são tentadas de novo automaticamente;
+ *   - cada tipo de falha vira um erro com o status HTTP adequado (veja ServicoExternoException);
+ *   - antes de usar a resposta, conferimos se ela é um JSON com o formato esperado;
+ *   - campos com tipo inesperado (ex.: lista no lugar de texto) são ignorados, sem derrubar a requisição.
  */
 class BrasilApiService
 {
     /**
-     * Consulta o CNPJ (já sem máscara) e devolve o JSON bruto da BrasilAPI.
+     * Consulta o CNPJ (já sem máscara) e devolve o JSON da BrasilAPI já conferido.
      *
-     * @throws CnpjNaoEncontradoException quando a Receita não tem esse CNPJ (404)
-     * @throws ServicoExternoException quando há timeout, falha de rede ou resposta inesperada
+     * @throws CnpjNaoEncontradoException quando a Receita não tem esse CNPJ
+     * @throws ServicoExternoException em qualquer outra falha da BrasilAPI
      */
     public function consultarCnpj(string $cnpj): array
     {
+        $config = config('services.brasilapi');
+
         try {
-            $resposta = Http::baseUrl(config('services.brasilapi.url'))
+            $resposta = Http::baseUrl($config['url'])
                 ->acceptJson()
-                // Sem timeout, a nossa API ficaria travada se a BrasilAPI estivesse lenta.
-                ->timeout(config('services.brasilapi.timeout'))
+                // Tempo máximo para ABRIR a conexão (servidor fora do ar costuma travar aqui).
+                ->connectTimeout($config['connect_timeout'])
+                // Tempo máximo para a requisição inteira. Sem isso, a nossa API ficaria
+                // presa esperando se a BrasilAPI estivesse lenta.
+                ->timeout($config['timeout'])
+                // Tenta de novo só nas falhas TEMPORÁRIAS (veja deveTentarDeNovo).
+                // throw: false = depois da última tentativa, devolve a resposta para
+                // tratarmos aqui embaixo, em vez de lançar a exceção genérica do Laravel.
+                ->retry(
+                    $config['tentativas'],
+                    $config['intervalo_ms'],
+                    fn (Throwable $e) => $this->deveTentarDeNovo($e),
+                    throw: false,
+                )
                 ->get("cnpj/v1/{$cnpj}");
         } catch (ConnectionException $e) {
-            // Falha de rede ou timeout: a culpa não é de quem chamou a nossa API.
-            throw new ServicoExternoException('Não foi possível acessar a BrasilAPI.', previous: $e);
+            // Não houve resposta nenhuma: ou passou do tempo, ou nem conectou.
+            throw $this->foiTimeout($e)
+                ? ServicoExternoException::timeout($e)
+                : ServicoExternoException::indisponivel($e);
         }
 
-        if ($resposta->notFound()) {
-            throw new CnpjNaoEncontradoException('CNPJ não encontrado na base da Receita Federal.');
+        return $this->validarResposta($resposta, $cnpj);
+    }
+
+    /**
+     * Confere o status e o conteúdo da resposta. Só devolve o JSON se ele fizer sentido.
+     */
+    private function validarResposta(Response $resposta, string $cnpj): array
+    {
+        $status = $resposta->status();
+
+        if ($status === 404) {
+            throw new CnpjNaoEncontradoException;
+        }
+
+        if ($status === 400) {
+            // Validamos o CNPJ antes de consultar, então isso é raro. Pode acontecer,
+            // por exemplo, se a BrasilAPI ainda não aceitar o CNPJ alfanumérico.
+            throw ServicoExternoException::cnpjRecusado();
+        }
+
+        if ($status === 429) {
+            throw ServicoExternoException::limiteExcedido($resposta->header('Retry-After') ?: null);
         }
 
         if (! $resposta->successful()) {
-            // Ex.: 429 (limite de requisições) ou 5xx (instabilidade da BrasilAPI).
-            throw new ServicoExternoException("A BrasilAPI respondeu com status {$resposta->status()}.");
+            throw ServicoExternoException::erro($status);
         }
 
-        return $resposta->json();
+        // Status 200, mas o conteúdo também precisa estar certo. Um proxy ou uma
+        // página de manutenção pode devolver HTML com status 200, por exemplo.
+        $dados = $resposta->json();
+
+        if (! is_array($dados) || array_is_list($dados)) {
+            throw ServicoExternoException::respostaInvalida('o corpo da resposta não é um objeto JSON');
+        }
+
+        if (! isset($dados['cnpj']) || ! is_scalar($dados['cnpj'])) {
+            throw ServicoExternoException::respostaInvalida('o campo "cnpj" está ausente');
+        }
+
+        if (Cnpj::limpar((string) $dados['cnpj']) !== $cnpj) {
+            throw ServicoExternoException::respostaInvalida('o CNPJ retornado é diferente do consultado');
+        }
+
+        if (! is_string($dados['razao_social'] ?? null) || trim($dados['razao_social']) === '') {
+            throw ServicoExternoException::respostaInvalida('o campo "razao_social" está ausente ou inválido');
+        }
+
+        return $dados;
+    }
+
+    /**
+     * Quais falhas valem uma nova tentativa?
+     *   - falha de conexão ou timeout: pode ter sido uma instabilidade momentânea da rede;
+     *   - erro 5xx: o servidor da BrasilAPI pode ter tido um problema passageiro.
+     * Não tentamos de novo:
+     *   - 404 e 400: a resposta seria a mesma;
+     *   - 429: tentar de novo na hora só piora o excesso de requisições.
+     */
+    private function deveTentarDeNovo(Throwable $e): bool
+    {
+        if ($e instanceof ConnectionException) {
+            return true;
+        }
+
+        return $e instanceof RequestException && $e->response->serverError();
+    }
+
+    /** O cURL usa o erro 28 para timeout ("Operation timed out"). */
+    private function foiTimeout(ConnectionException $e): bool
+    {
+        $mensagem = strtolower($e->getMessage());
+
+        return str_contains($mensagem, 'curl error 28') || str_contains($mensagem, 'timed out');
     }
 
     /**
@@ -63,6 +154,9 @@ class BrasilApiService
      * A BrasilAPI devolve mais de 50 campos "achatados", com nomes como
      * `ddd_telefone_1` e `qsa`, e textos vazios como "". Aqui escolhemos só o
      * que interessa, renomeamos para algo mais claro e trocamos "" por null.
+     *
+     * Para resistir a dados inesperados, um campo com tipo errado vira null (ou
+     * é descartado, no caso das listas) em vez de causar erro.
      *
      * Ponto para debate: ficamos só com os campos mais usados. Se precisarmos de
      * outros (ex.: opção pelo Simples/MEI), basta incluir aqui e na migration.
@@ -81,11 +175,11 @@ class BrasilApiService
             'razao_social' => $this->texto($d['razao_social'] ?? null),
             'nome_fantasia' => $this->texto($d['nome_fantasia'] ?? null),
             'situacao_cadastral' => $this->texto($d['descricao_situacao_cadastral'] ?? null),
-            'data_situacao_cadastral' => $this->texto($d['data_situacao_cadastral'] ?? null),
-            'data_inicio_atividade' => $this->texto($d['data_inicio_atividade'] ?? null),
+            'data_situacao_cadastral' => $this->data($d['data_situacao_cadastral'] ?? null),
+            'data_inicio_atividade' => $this->data($d['data_inicio_atividade'] ?? null),
             'natureza_juridica' => $this->texto($d['natureza_juridica'] ?? null),
             'porte' => $this->texto($d['porte'] ?? null),
-            'capital_social' => $d['capital_social'] ?? null,
+            'capital_social' => is_numeric($d['capital_social'] ?? null) ? (float) $d['capital_social'] : null,
             'telefone' => $this->texto($d['ddd_telefone_1'] ?? null),
             'email' => $this->texto($d['email'] ?? null),
 
@@ -99,7 +193,7 @@ class BrasilApiService
             'uf' => $this->texto($d['uf'] ?? null),
             'cep' => $this->texto($d['cep'] ?? null),
 
-            'cnae_principal_codigo' => $d['cnae_fiscal'] ?? null,
+            'cnae_principal_codigo' => $this->inteiro($d['cnae_fiscal'] ?? null),
             'cnae_principal_descricao' => $this->texto($d['cnae_fiscal_descricao'] ?? null),
 
             // Listas (CNAEs secundários e sócios) ficam numa coluna JSON. Ponto
@@ -107,34 +201,57 @@ class BrasilApiService
             // (empresa_socios, empresa_cnaes). Ficamos com JSON por simplicidade,
             // porque esses dados são sempre lidos junto com a empresa e não são
             // filtrados sozinhos.
-            'atividades_secundarias' => collect($d['cnaes_secundarios'] ?? [])
+            'atividades_secundarias' => $this->lista($d['cnaes_secundarios'] ?? null)
                 // Sem CNAE secundário, a BrasilAPI devolve [{codigo: 0, descricao: ""}]
                 // em vez de uma lista vazia. Esse item é descartado aqui.
-                ->filter(fn ($a) => ! empty($a['codigo']))
-                ->map(fn ($a) => [
-                    'codigo' => $a['codigo'],
+                ->filter(fn (array $a) => $this->inteiro($a['codigo'] ?? null))
+                ->map(fn (array $a) => [
+                    'codigo' => $this->inteiro($a['codigo']),
                     'descricao' => $this->texto($a['descricao'] ?? null),
                 ])
                 ->values()
                 ->all(),
 
             // QSA = Quadro de Sócios e Administradores.
-            'socios' => collect($d['qsa'] ?? [])
-                ->map(fn ($s) => [
+            'socios' => $this->lista($d['qsa'] ?? null)
+                ->map(fn (array $s) => [
                     'nome' => $this->texto($s['nome_socio'] ?? null),
                     'qualificacao' => $this->texto($s['qualificacao_socio'] ?? null),
-                    'data_entrada' => $this->texto($s['data_entrada_sociedade'] ?? null),
+                    'data_entrada' => $this->data($s['data_entrada_sociedade'] ?? null),
                 ])
                 ->values()
                 ->all(),
         ];
     }
 
-    /** Tira os espaços das pontas e troca "" por null. */
+    /** Tira os espaços das pontas e troca "" por null. Se não for texto ou número, vira null. */
     private function texto(mixed $valor): ?string
     {
-        $valor = trim((string) ($valor ?? ''));
+        if (! is_scalar($valor)) {
+            return null;
+        }
+
+        $valor = trim((string) $valor);
 
         return $valor === '' ? null : $valor;
+    }
+
+    /** Só aceita datas no formato AAAA-MM-DD, que é o da BrasilAPI. Qualquer outra coisa vira null. */
+    private function data(mixed $valor): ?string
+    {
+        $valor = $this->texto($valor);
+
+        return $valor !== null && preg_match('/^\d{4}-\d{2}-\d{2}$/', $valor) ? $valor : null;
+    }
+
+    private function inteiro(mixed $valor): ?int
+    {
+        return is_numeric($valor) && (int) $valor > 0 ? (int) $valor : null;
+    }
+
+    /** Garante uma coleção só de objetos. Se vier um texto no lugar da lista, devolve uma coleção vazia. */
+    private function lista(mixed $valor): \Illuminate\Support\Collection
+    {
+        return collect(is_array($valor) ? $valor : [])->filter(fn ($item) => is_array($item));
     }
 }
