@@ -6,17 +6,17 @@
 
 ## Estratégia de branches
 
-Usamos um **Git Flow simplificado**:
+Usei um Git Flow simplificado:
 
 | Branch | Papel | Recebe código de |
 |---|---|---|
-| `main` | Versão **estável**, entregue. Cada entrega ganha uma tag (`v1.0.0`) | Só de `develop`, por merge |
+| `main` | Versão estável, entregue. Cada entrega ganha uma tag (`v1.0.0`) | Só de `develop`, por merge |
 | `develop` | Integração: junta as tarefas prontas | Branches `feature/*` e `docs/*` |
 | `feature/tarefa-N-...` | Uma branch para cada tarefa, com o código e os testes dela | Nasce de `develop` e volta para `develop` |
 | `docs/...` | Mudanças só de documentação | Nasce de `develop` e volta para `develop` |
 
-Todos os merges usam `--no-ff` (sem *fast-forward*), para que **cada tarefa apareça como um
-bloco no histórico**, com um commit de merge dizendo qual tarefa entrou.
+Todos os merges usam `--no-ff` (sem *fast-forward*), para que cada tarefa apareça como um
+bloco no histórico, com um commit de merge dizendo qual tarefa entrou.
 
 ## Histórico
 
@@ -87,7 +87,7 @@ gitGraph
 
 > A Tarefa 4 foi integrada antes da 3 porque o Docker era necessário para rodar o projeto
 > sem PHP instalado. O commit `fix(testes)` (marcado em destaque no gráfico) corrige um problema
-> encontrado nessa etapa e está explicado na [Tarefa 4](TAREFA-4.md#problema-encontrado-durante-o-desenvolvimento-bom-para-o-debate).
+> encontrado nessa etapa e está explicado na [Tarefa 4](TAREFA-4.md#problema-encontrado-durante-o-desenvolvimento).
 
 ### Commits por tarefa
 
@@ -117,7 +117,7 @@ gitGraph
 
 ## Padrão das mensagens de commit
 
-Seguimos o [Conventional Commits](https://www.conventionalcommits.org/pt-br/v1.0.0/), com as mensagens em português:
+Segui o [Conventional Commits](https://www.conventionalcommits.org/pt-br/v1.0.0/), com as mensagens em português:
 
 ```
 <tipo>(<escopo opcional>): <resumo no imperativo, em até ~72 caracteres>
@@ -143,7 +143,7 @@ flowchart LR
 | `chore` | Tarefas de manutenção | `chore: cria projeto Laravel 13...` |
 | `merge` | Merge de uma branch de tarefa | `merge: Tarefa 3 - resiliência e tratamento de exceções` |
 
-Por que isso ajuda: dá para filtrar o histórico (`git log --grep="^fix"` mostra só as correções),
+Com isso dá para filtrar o histórico (`git log --grep="^fix"` mostra só as correções),
 gerar *changelog* automático e, na revisão, entender o commit só pela primeira linha.
 
 ## Como ver o histórico
@@ -170,12 +170,12 @@ git push origin --tags
 
 O `.gitignore` já impede que `.env` (segredos), `vendor/` e o banco SQLite local vão para o repositório.
 
-## Pontos para debate com a equipe
+## Melhorias e alternativas
 
-1. **Git Flow vs Trunk-based:** com uma equipe pequena e deploy contínuo, muitos times preferem
+1. Git Flow vs Trunk-based: com uma equipe pequena e deploy contínuo, muitos times preferem
    trabalhar direto na `main` com branches curtas. O Git Flow mostra bem a organização por tarefa, mas tem mais etapas.
-2. **Pull Requests:** num time, cada `feature/*` viraria um PR revisado antes do merge, com os testes rodando no CI.
-3. **Merge vs Rebase/Squash:** escolhemos `--no-ff` para manter visível o bloco de cada tarefa. O
+2. Pull Requests: num time, cada `feature/*` viraria um PR revisado antes do merge, com os testes rodando no CI.
+3. Merge vs Rebase/Squash: escolhi `--no-ff` para manter visível o bloco de cada tarefa. O
    *squash* deixaria um commit por tarefa, com histórico mais limpo e menos detalhe.
-4. **Proteção de branch:** no GitHub, dá para bloquear push direto na `main` e exigir PR + testes passando.
-5. **Branches antigas:** depois do merge, as `feature/*` podem ser apagadas. Mantivemos para o histórico ficar mais fácil de ver na avaliação.
+4. Proteção de branch: no GitHub, dá para bloquear push direto na `main` e exigir PR + testes passando.
+5. Branches antigas: depois do merge, as `feature/*` podem ser apagadas. Mantive para facilitar a leitura do histórico.

@@ -21,10 +21,10 @@
         <!--
             PROTEÇÃO DO BANCO REAL: dentro do container Docker já existem variáveis como
             DB_CONNECTION=mysql. O Laravel lê primeiro o $_SERVER, onde o Docker coloca
-            essas variáveis. Por isso usamos <server ... force="true">: os testes passam
+            essas variáveis. Por isso é usado <server ... force="true">: os testes passam
             a usar SEMPRE um SQLite em memória, isolado e descartável.
             Sem isso, o RefreshDatabase dos testes APAGARIA o banco MySQL de verdade
-            (isso aconteceu durante o desenvolvimento e foi assim que descobrimos).
+            (isso aconteceu durante o desenvolvimento).
             Um <env force="true"> sozinho não resolve, porque ele só escreve no $_ENV/getenv.
         -->
         <server name="APP_ENV" value="testing" force="true"/>

@@ -44,7 +44,7 @@ class Empresa extends Model
     /**
      * Conversões automáticas de tipo.
      * 'array': o Eloquent transforma o array PHP em JSON ao gravar e o JSON em
-     * array ao ler, então não precisamos chamar json_encode/json_decode à mão.
+     * array ao ler, então não é preciso chamar json_encode/json_decode à mão.
      */
     protected function casts(): array
     {

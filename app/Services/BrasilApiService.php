@@ -21,17 +21,17 @@ use Throwable;
  *
  * Por que separar isso num Service?
  *   -> Toda a parte que "conhece" a BrasilAPI (URL, nomes dos campos, códigos de
- *      erro) fica num só lugar. Se um dia trocarmos para outra API (ReceitaWS,
+ *      erro) fica num só lugar. Se um dia a BrasilAPI for trocada por outra API (ReceitaWS,
  *      CNPJá, que o enunciado permite), só esta classe muda. O controller e o banco
  *      continuam iguais.
  *   -> Nos testes, o Http::fake() substitui a chamada real e os testes não
  *      dependem da internet nem do limite de requisições da BrasilAPI.
  *
- * RESILIÊNCIA (Tarefa 3): não confiamos em nada que vem de fora. Por isso
+ * RESILIÊNCIA (Tarefa 3): nada que vem de fora é tratado como confiável. Por isso
  *   - há tempo limite para conectar e para responder (timeout);
  *   - falhas temporárias (rede, erro 5xx) são tentadas de novo automaticamente;
  *   - cada tipo de falha vira um erro com o status HTTP adequado (veja ServicoExternoException);
- *   - antes de usar a resposta, conferimos se ela é um JSON com o formato esperado;
+ *   - antes de usar a resposta, o código confere se ela é um JSON com o formato esperado;
  *   - campos com tipo inesperado (ex.: lista no lugar de texto) são ignorados, sem derrubar a requisição.
  */
 class BrasilApiService
@@ -86,7 +86,7 @@ class BrasilApiService
         }
 
         if ($status === 400) {
-            // Validamos o CNPJ antes de consultar, então isso é raro. Pode acontecer,
+            // O CNPJ é validado antes de consultar, então isso é raro. Pode acontecer,
             // por exemplo, se a BrasilAPI ainda não aceitar o CNPJ alfanumérico.
             throw ServicoExternoException::cnpjRecusado();
         }
@@ -126,7 +126,7 @@ class BrasilApiService
      * Quais falhas valem uma nova tentativa?
      *   - falha de conexão ou timeout: pode ter sido uma instabilidade momentânea da rede;
      *   - erro 5xx: o servidor da BrasilAPI pode ter tido um problema passageiro.
-     * Não tentamos de novo:
+     * Não tenta de novo:
      *   - 404 e 400: a resposta seria a mesma;
      *   - 429: tentar de novo na hora só piora o excesso de requisições.
      */
@@ -152,19 +152,19 @@ class BrasilApiService
      *
      * Converte o JSON da BrasilAPI para as colunas da nossa tabela `empresas`.
      * A BrasilAPI devolve mais de 50 campos "achatados", com nomes como
-     * `ddd_telefone_1` e `qsa`, e textos vazios como "". Aqui escolhemos só o
-     * que interessa, renomeamos para algo mais claro e trocamos "" por null.
+     * `ddd_telefone_1` e `qsa`, e textos vazios como "". Aqui fica só o
+     * que interessa, com nomes mais claros e "" trocado por null.
      *
      * Para resistir a dados inesperados, um campo com tipo errado vira null (ou
      * é descartado, no caso das listas) em vez de causar erro.
      *
-     * Ponto para debate: ficamos só com os campos mais usados. Se precisarmos de
+     * Obs.: só os campos mais usados foram mantidos. Se precisar de
      * outros (ex.: opção pelo Simples/MEI), basta incluir aqui e na migration.
      */
     public function estruturar(array $d): array
     {
         // A BrasilAPI manda o tipo do logradouro ("RUA") separado do nome ("DAS FLORES").
-        // Juntamos os dois, mas sem repetir o tipo se o nome já começar com ele.
+        // Junta os dois, mas sem repetir o tipo se o nome já começar com ele.
         $tipoLogradouro = $this->texto($d['descricao_tipo_de_logradouro'] ?? null);
         $logradouro = $this->texto($d['logradouro'] ?? null);
         if ($tipoLogradouro && $logradouro && ! str_starts_with(strtoupper($logradouro), strtoupper($tipoLogradouro))) {
@@ -196,9 +196,9 @@ class BrasilApiService
             'cnae_principal_codigo' => $this->inteiro($d['cnae_fiscal'] ?? null),
             'cnae_principal_descricao' => $this->texto($d['cnae_fiscal_descricao'] ?? null),
 
-            // Listas (CNAEs secundários e sócios) ficam numa coluna JSON. Ponto
-            // para debate: o mais "normalizado" seria criar tabelas próprias
-            // (empresa_socios, empresa_cnaes). Ficamos com JSON por simplicidade,
+            // Listas (CNAEs secundários e sócios) ficam numa coluna JSON. O mais
+            // "normalizado" seria criar tabelas próprias
+            // (empresa_socios, empresa_cnaes). Optei por JSON por simplicidade,
             // porque esses dados são sempre lidos junto com a empresa e não são
             // filtrados sozinhos.
             'atividades_secundarias' => $this->lista($d['cnaes_secundarios'] ?? null)

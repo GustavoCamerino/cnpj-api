@@ -18,7 +18,7 @@ use Illuminate\Http\JsonResponse;
  *   - "codigo" é para programas: o front-end pode fazer `if (codigo === 'CNPJ_NAO_ENCONTRADO')`
  *     sem depender do texto, que pode mudar ou ser traduzido.
  *
- * Mantivemos "message" e "errors" com os nomes que o Laravel já usa nos erros de
+ * Mantive "message" e "errors" com os nomes que o Laravel já usa nos erros de
  * validação. Assim todos os erros, inclusive os do framework, ficam iguais.
  */
 final class ApiResponse
