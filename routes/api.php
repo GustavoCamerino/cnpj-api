@@ -11,3 +11,7 @@ use Illuminate\Support\Facades\Route;
 // Tarefa 1 - Sincronização e persistência cadastral
 // Recebe o CNPJ, consulta a BrasilAPI e cria/atualiza o registro no banco.
 Route::post('/empresas', [EmpresaController::class, 'sincronizar']);
+
+// Tarefa 2 - Endpoints internos de consulta (só leem o banco local)
+Route::get('/empresas', [EmpresaController::class, 'index']);        // listagem geral
+Route::get('/empresas/{cnpj}', [EmpresaController::class, 'show']);  // uma empresa

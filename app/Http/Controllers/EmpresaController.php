@@ -6,8 +6,11 @@ use App\Http\Requests\SincronizarEmpresaRequest;
 use App\Http\Resources\EmpresaResource;
 use App\Models\Empresa;
 use App\Services\BrasilApiService;
+use App\Support\Cnpj;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
+use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 
 /**
  * Endpoints de empresas.
@@ -76,5 +79,51 @@ class EmpresaController extends Controller
         } catch (UniqueConstraintViolationException) {
             return Empresa::updateOrCreate(['cnpj' => $cnpj], $dados);
         }
+    }
+
+    /**
+     * TAREFA 2 - GET /api/empresas
+     * Lista as empresas gravadas no banco local, sem consultar a API externa.
+     *
+     * Usa paginação (15 por página, ?per_page= até 100) para a resposta não ficar
+     * enorme quando houver muitas empresas. A resposta traz `data` (as empresas),
+     * `links` e `meta` (total, página atual etc.).
+     * Exemplo: GET /api/empresas?page=2&per_page=50
+     */
+    public function index(Request $request): AnonymousResourceCollection
+    {
+        $porPagina = min(max((int) $request->query('per_page', 15), 1), 100);
+
+        $empresas = Empresa::query()
+            ->orderBy('razao_social')
+            ->paginate($porPagina)
+            ->withQueryString(); // mantém o per_page nos links de próxima/anterior
+
+        return EmpresaResource::collection($empresas);
+    }
+
+    /**
+     * GET /api/empresas/{cnpj}
+     * Busca uma empresa no banco local, sem consultar a API externa.
+     *
+     * O CNPJ pode vir com ou sem pontos e hífen. A barra "/" da máscara não
+     * funciona na URL (ela separa as partes do caminho), então ela não deve ser
+     * enviada aqui. Ex.: /api/empresas/11222333000181 ou /api/empresas/11.222.333.0001-81
+     */
+    public function show(string $cnpj): JsonResponse|EmpresaResource
+    {
+        $cnpj = Cnpj::limpar($cnpj);
+
+        if (! Cnpj::valido($cnpj)) {
+            return response()->json(['message' => 'O CNPJ informado é inválido.'], 422);
+        }
+
+        $empresa = Empresa::where('cnpj', $cnpj)->first();
+
+        if (! $empresa) {
+            return response()->json(['message' => 'Empresa não cadastrada no banco local.'], 404);
+        }
+
+        return new EmpresaResource($empresa);
     }
 }

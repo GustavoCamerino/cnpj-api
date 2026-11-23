@@ -130,4 +130,44 @@ class EmpresaApiTest extends TestCase
         $this->postJson('/api/empresas', ['cnpj' => self::CNPJ])->assertStatus(502);
         $this->assertDatabaseCount('empresas', 0);
     }
+
+    // ---------------------------------------------------------------- Tarefa 2
+
+    public function test_listagem_retorna_empresas_do_banco_paginadas(): void
+    {
+        Http::fake(); // garante que a listagem NÃO consulta a API externa
+
+        Empresa::create(['cnpj' => '11222333000181', 'razao_social' => 'BETA LTDA']);
+        Empresa::create(['cnpj' => '19131243000197', 'razao_social' => 'ALFA SA']);
+
+        $this->getJson('/api/empresas')
+            ->assertOk()
+            ->assertJsonCount(2, 'data')
+            ->assertJsonPath('data.0.razao_social', 'ALFA SA') // ordenada por razão social
+            ->assertJsonPath('meta.total', 2);
+
+        $this->getJson('/api/empresas?per_page=1')
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('meta.last_page', 2);
+
+        Http::assertNothingSent();
+    }
+
+    public function test_listagem_vazia(): void
+    {
+        $this->getJson('/api/empresas')->assertOk()->assertJsonCount(0, 'data');
+    }
+
+    public function test_busca_uma_empresa_pelo_cnpj(): void
+    {
+        Empresa::create(['cnpj' => self::CNPJ, 'razao_social' => 'EMPRESA EXEMPLO LTDA']);
+
+        $this->getJson('/api/empresas/'.self::CNPJ)
+            ->assertOk()
+            ->assertJsonPath('data.razao_social', 'EMPRESA EXEMPLO LTDA');
+
+        $this->getJson('/api/empresas/11.222.333.0001-81')->assertOk(); // pontos/hífen são aceitos
+        $this->getJson('/api/empresas/19131243000197')->assertNotFound();
+        $this->getJson('/api/empresas/123')->assertUnprocessable();
+    }
 }
