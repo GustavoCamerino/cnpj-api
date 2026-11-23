@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Exceptions\ApiException;
 use App\Http\Requests\SincronizarEmpresaRequest;
 use App\Http\Resources\EmpresaResource;
 use App\Models\Empresa;
@@ -11,6 +12,7 @@ use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
+use Illuminate\Validation\ValidationException;
 
 /**
  * Endpoints de empresas.
@@ -35,7 +37,9 @@ class EmpresaController extends Controller
      *
      * Passo a passo:
      *   1. O SincronizarEmpresaRequest tira a máscara e valida o CNPJ (se for inválido: 422).
-     *   2. Consulta a BrasilAPI (se não achar: 404, se o serviço falhar: 502).
+     *   2. Consulta a BrasilAPI (se não achar: 404; se o serviço falhar: 502/503/504,
+     *      veja ServicoExternoException). Os erros são exceções que já sabem se
+     *      transformar em JSON, por isso não há try/catch aqui.
      *   3. Estrutura os dados.
      *   4. Grava no banco: cria se o CNPJ for novo ou atualiza se já existir.
      *   5. Devolve o JSON. Status 201 quando criou e 200 quando atualizou.
@@ -110,18 +114,20 @@ class EmpresaController extends Controller
      * funciona na URL (ela separa as partes do caminho), então ela não deve ser
      * enviada aqui. Ex.: /api/empresas/11222333000181 ou /api/empresas/11.222.333.0001-81
      */
-    public function show(string $cnpj): JsonResponse|EmpresaResource
+    public function show(string $cnpj): EmpresaResource
     {
         $cnpj = Cnpj::limpar($cnpj);
 
+        // Os erros são lançados como exceção para sair no formato padrão da API
+        // (o mesmo do POST): { "message": ..., "codigo": ... }
         if (! Cnpj::valido($cnpj)) {
-            return response()->json(['message' => 'O CNPJ informado é inválido.'], 422);
+            throw ValidationException::withMessages(['cnpj' => 'O CNPJ informado é inválido.']);
         }
 
         $empresa = Empresa::where('cnpj', $cnpj)->first();
 
         if (! $empresa) {
-            return response()->json(['message' => 'Empresa não cadastrada no banco local.'], 404);
+            throw new ApiException('Empresa não cadastrada no banco local.', 404, 'EMPRESA_NAO_ENCONTRADA');
         }
 
         return new EmpresaResource($empresa);

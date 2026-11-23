@@ -2,20 +2,14 @@
 
 namespace App\Exceptions;
 
-use Exception;
-use Illuminate\Http\JsonResponse;
-
 /**
  * O CNPJ é válido no formato, mas não existe na base da Receita Federal.
- *
- * O método render() é chamado pelo Laravel automaticamente quando a exceção não
- * é tratada. Então o controller não precisa de try/catch: basta lançar a exceção
- * e a resposta 404 já sai pronta.
+ * A BrasilAPI respondeu 404 e nós repassamos 404.
  */
-class CnpjNaoEncontradoException extends Exception
+class CnpjNaoEncontradoException extends ApiException
 {
-    public function render(): JsonResponse
+    public function __construct()
     {
-        return response()->json(['message' => $this->getMessage()], 404);
+        parent::__construct('CNPJ não encontrado na base da Receita Federal.', 404, 'CNPJ_NAO_ENCONTRADO');
     }
 }
